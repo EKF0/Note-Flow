@@ -4,7 +4,8 @@ import {
   Play, Pause, Save, Mic, MicOff, Wand2, 
   ChevronLeft, Loader2, BrainCircuit, Tag, Check,
   Image as ImageIcon, Video, MapPin, Globe, MessageSquare, Volume2, 
-  Sparkles, FileAudio, X, Send, Edit, Plus, Link as LinkIcon
+  Sparkles, FileAudio, X, Send, Edit, Plus, Link as LinkIcon,
+  Clock, History, StopCircle
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { storageService } from '../services/storageService';
@@ -17,10 +18,21 @@ interface NoteEditorProps {
 }
 
 const formatDuration = (totalSeconds: number) => {
-  const h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
-  const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
-  const s = Math.floor(totalSeconds % 60).toString().padStart(2, '0');
-  return `${h}:${m}:${s}`;
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+};
+
+const formatTime = (timestamp: number) => {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatDate = (timestamp: number) => {
+    return new Date(timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBack, onJumpToNote }) => {
@@ -29,6 +41,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [elapsedInSession, setElapsedInSession] = useState(0);
   const [relatedNotes, setRelatedNotes] = useState<Note[]>([]);
+  const [showTimeLog, setShowTimeLog] = useState(false);
   
   // AI States
   const [aiLoading, setAiLoading] = useState(false);
@@ -51,19 +64,16 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
-  // Update note when initialNote changes (e.g. via jump)
   useEffect(() => {
     setNote(initialNote);
     loadRelatedNotes(initialNote);
   }, [initialNote]);
 
-  // Auto-save
   useEffect(() => {
     const timer = setTimeout(() => handleSave(), 2000);
     return () => clearTimeout(timer);
   }, [note.title, note.content, note.status, note.category, note.tags]);
 
-  // Timer
   useEffect(() => {
     let interval: any;
     if (isTimerRunning) {
@@ -83,7 +93,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
 
   const toggleTimer = () => {
     if (isTimerRunning) {
-      setIsTimerRunning(false);
       const now = Date.now();
       const duration = elapsedInSession;
       const newSession: TimeSession = {
@@ -95,8 +104,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
       setNote(prev => ({
         ...prev,
         totalTime: prev.totalTime + duration,
-        sessions: [...prev.sessions, newSession]
+        sessions: [newSession, ...prev.sessions]
       }));
+      setIsTimerRunning(false);
       setElapsedInSession(0);
       setSessionStartTime(null);
     } else {
@@ -110,7 +120,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
   };
 
   // --- AI ACTIONS ---
-
   const handleCategorize = async () => {
     setAiLoading(true);
     const result = await geminiService.categorizeAndPredict(note.content, note.title);
@@ -153,20 +162,15 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
       const q = prompt("What place are you looking for?");
       if (!q) return;
       setAiLoading(true);
-      
       let location = undefined;
       if (navigator.geolocation) {
           try {
             const pos: GeolocationPosition = await new Promise((resolve, reject) => 
                 navigator.geolocation.getCurrentPosition(resolve, reject)
             );
-            location = {
-                latitude: pos.coords.latitude,
-                longitude: pos.coords.longitude
-            };
+            location = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
           } catch (e) { console.log("No location access"); }
       }
-
       const result = await geminiService.mapGrounding(q, location);
       setNote(prev => ({...prev, content: prev.content + `\n\n### Map Info: ${q}\n${result}`}));
       setAiLoading(false);
@@ -175,10 +179,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
   const handleTTS = async () => {
     setAiLoading(true);
     const textToRead = window.getSelection()?.toString() || note.content.slice(0, 500); 
-    if (!textToRead) {
-        setAiLoading(false);
-        return;
-    }
+    if (!textToRead) { setAiLoading(false); return; }
     const audioData = await geminiService.generateSpeech(textToRead);
     if (audioData) {
         const audio = new Audio(`data:audio/mp3;base64,${audioData}`);
@@ -193,35 +194,22 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
           if (activeTool === 'IMG_GEN') {
               const base64 = await geminiService.generateImage(toolInput, selectedImageSize);
               if (base64) {
-                  setNote(prev => ({
-                      ...prev,
-                      content: prev.content + `\n\n![Generated Image](${base64})`
-                  }));
+                  setNote(prev => ({ ...prev, content: prev.content + `\n\n![Generated Image](${base64})` }));
               }
           } else if (activeTool === 'IMG_EDIT' && uploadFile) {
               const base64 = await fileToBase64(uploadFile);
               const result = await geminiService.editImage(base64, toolInput);
               if (result) {
-                  setNote(prev => ({
-                    ...prev,
-                    content: prev.content + `\n\n![Edited Image](${result})`
-                  }));
+                  setNote(prev => ({ ...prev, content: prev.content + `\n\n![Edited Image](${result})` }));
               }
           } else if (activeTool === 'VIDEO' && uploadFile) {
               const base64 = await fileToBase64(uploadFile);
               const result = await geminiService.analyzeVideo(base64, uploadFile.type, toolInput);
-              setNote(prev => ({
-                ...prev,
-                content: prev.content + `\n\n### Video Analysis\n${result}`
-              }));
+              setNote(prev => ({ ...prev, content: prev.content + `\n\n### Video Analysis\n${result}` }));
           }
       } catch (e: any) {
           console.error(e);
-          if (e.message?.includes('403') || e.status === 'PERMISSION_DENIED') {
-             alert("Permission Denied: Please check your API key. You may need a paid plan for this feature.");
-          } else {
-             alert("Operation failed. Ensure your API key is selected and try again.");
-          }
+          alert("Operation failed. Ensure your API key is selected and try again.");
       } finally {
           setAiLoading(false);
           setActiveTool('NONE');
@@ -240,11 +228,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
               const mediaRecorder = new MediaRecorder(stream);
               mediaRecorderRef.current = mediaRecorder;
               audioChunksRef.current = [];
-              
-              mediaRecorder.ondataavailable = (event) => {
-                  audioChunksRef.current.push(event.data);
-              };
-
+              mediaRecorder.ondataavailable = (event) => audioChunksRef.current.push(event.data);
               mediaRecorder.onstop = async () => {
                   const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
                   const reader = new FileReader();
@@ -253,18 +237,13 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
                       const base64 = reader.result as string;
                       setAiLoading(true);
                       const text = await geminiService.transcribeAudio(base64, audioBlob.type || 'audio/webm');
-                      setNote(prev => ({
-                          ...prev,
-                          content: prev.content + " " + text
-                      }));
+                      setNote(prev => ({ ...prev, content: prev.content + " " + text }));
                       setAiLoading(false);
                   }
               };
-
               mediaRecorder.start();
               setIsRecording(true);
           } catch (e) {
-              console.error("Mic error", e);
               alert("Microphone access denied");
           }
       }
@@ -276,12 +255,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
       setChatHistory(prev => [...prev, userMsg]);
       setChatInput("");
       setChatLoading(true);
-
-      const apiHistory = chatHistory.map(h => ({
-          role: h.role,
-          parts: [{ text: h.text }]
-      }));
-
+      const apiHistory = chatHistory.map(h => ({ role: h.role, parts: [{ text: h.text }] }));
       const response = await geminiService.chatMessage(apiHistory, userMsg.text);
       setChatHistory(prev => [...prev, { role: 'model', text: response, timestamp: Date.now() }]);
       setChatLoading(false);
@@ -297,7 +271,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
   };
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    <div className={`flex flex-col h-full bg-white relative transition-colors duration-500 ${isTimerRunning ? 'bg-orange-50/20' : ''}`}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white z-10 sticky top-0">
         <div className="flex items-center space-x-3">
@@ -317,14 +291,19 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
         </div>
 
         <div className="flex items-center space-x-2">
-            <div className={`flex items-center px-3 py-1.5 rounded-full transition-colors ${isTimerRunning ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-600'}`}>
-                <span className="font-mono text-sm font-medium mr-2">
+            <div 
+              onClick={toggleTimer}
+              className={`flex items-center px-4 py-2 rounded-full cursor-pointer transition-all duration-300 shadow-sm
+                ${isTimerRunning ? 'bg-orange-500 text-white animate-pulse shadow-orange-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+                {isTimerRunning ? <StopCircle size={18} className="mr-2" /> : <Play size={18} className="mr-2" />}
+                <span className="font-mono text-sm font-bold tracking-wider">
                     {formatDuration(note.totalTime + elapsedInSession)}
                 </span>
-                <button onClick={toggleTimer} className="focus:outline-none">
-                    {isTimerRunning ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-                </button>
             </div>
+            <button onClick={() => setShowTimeLog(!showTimeLog)} className={`p-2 rounded-full transition ${showTimeLog ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:bg-gray-100'}`}>
+                <History size={20} />
+            </button>
             <button onClick={handleSave} className="p-2 text-gray-400 hover:text-blue-600">
                 <Save size={20} />
             </button>
@@ -351,8 +330,37 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ note: initialNote, onSave, onBa
           </div>
 
           {/* AI / Tools Sidebar */}
-          <div className="w-72 border-l border-gray-100 bg-gray-50 p-4 flex flex-col gap-6 overflow-y-auto hidden xl:flex">
+          <div className="w-80 border-l border-gray-100 bg-gray-50/50 p-4 flex flex-col gap-6 overflow-y-auto hidden xl:flex">
              
+             {/* Section: Time Log (Dynamic) */}
+             {showTimeLog && (
+                <div className="space-y-3 p-4 bg-white rounded-2xl border border-gray-200 shadow-sm animate-in slide-in-from-right-2">
+                   <div className="flex justify-between items-center mb-1">
+                      <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1">
+                          <Clock size={12}/> Focus Sessions
+                       </h3>
+                       <button onClick={() => setShowTimeLog(false)}><X size={14} className="text-gray-400"/></button>
+                   </div>
+                   <div className="space-y-2 max-h-60 overflow-y-auto no-scrollbar">
+                       {note.sessions.length === 0 ? (
+                           <p className="text-[10px] text-gray-400 italic py-2">No focus sessions recorded yet.</p>
+                       ) : (
+                           note.sessions.map(s => (
+                               <div key={s.id} className="p-2 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center group">
+                                   <div>
+                                       <span className="text-[10px] font-bold text-gray-800 block">{formatDate(s.startTime)}</span>
+                                       <span className="text-[9px] text-gray-400">{formatTime(s.startTime)} - {s.endTime ? formatTime(s.endTime) : '...'}</span>
+                                   </div>
+                                   <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                       {formatDuration(s.duration)}
+                                   </span>
+                               </div>
+                           ))
+                       )}
+                   </div>
+                </div>
+             )}
+
              {/* Section: Linked Content */}
              {relatedNotes.length > 0 && (
                 <div className="space-y-2">
