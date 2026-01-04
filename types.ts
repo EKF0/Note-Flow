@@ -31,7 +31,7 @@ export interface Note {
   updatedAt: number;
 }
 
-export type ViewMode = 'HOME' | 'DETAIL' | 'STATS';
+export type ViewMode = 'HOME' | 'DETAIL' | 'STATS' | 'GRAPH';
 
 export interface AIResponse {
   text?: string;
@@ -39,4 +39,10 @@ export interface AIResponse {
   category?: NoteCategory;
   status?: NoteStatus;
   summary?: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
 }

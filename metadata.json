@@ -2,6 +2,7 @@
   "name": "Chronos Notes AI",
   "description": "A minimalist, AI-powered note-taking app with integrated time tracking, voice dictation, and intelligent categorization.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }

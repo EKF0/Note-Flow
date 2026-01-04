@@ -4,13 +4,15 @@ import { Note, ViewMode } from './types';
 import NoteList from './components/NoteList';
 import NoteEditor from './components/NoteEditor';
 import StatsView from './components/StatsView';
-import { BarChart3, Layout } from 'lucide-react';
+import GraphView from './components/GraphView';
+import { BarChart3, Layout, Lock, Share2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('HOME');
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [loading, setLoading] = useState(true);
+  const [apiKeySelected, setApiKeySelected] = useState(false);
 
   // Load notes on mount
   useEffect(() => {
@@ -21,6 +23,29 @@ const App: React.FC = () => {
     };
     loadNotes();
   }, []);
+
+  // Check API Key Selection for advanced features
+  useEffect(() => {
+    const checkKey = async () => {
+      const aistudio = (window as any).aistudio;
+      if (aistudio) {
+        const hasKey = await aistudio.hasSelectedApiKey();
+        setApiKeySelected(hasKey);
+      } else {
+        // Fallback for dev environment without aistudio wrapper, assume pre-configured
+        setApiKeySelected(true);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+      const aistudio = (window as any).aistudio;
+      if (aistudio) {
+          await aistudio.openSelectKey();
+          setApiKeySelected(true);
+      }
+  };
 
   const handleCreateNote = () => {
     const newNote = storageService.createEmptyNote();
@@ -35,7 +60,6 @@ const App: React.FC = () => {
 
   const handleSaveNote = useCallback(async (updatedNote: Note) => {
     await storageService.saveNote(updatedNote);
-    // Update local state to reflect changes immediately
     setNotes(prev => {
         const idx = prev.findIndex(n => n.id === updatedNote.id);
         if (idx >= 0) {
@@ -45,7 +69,6 @@ const App: React.FC = () => {
         }
         return [updatedNote, ...prev];
     });
-    // If we are currently editing this note, keep the selectedNote in sync
     setSelectedNote(updatedNote);
   }, []);
 
@@ -68,6 +91,28 @@ const App: React.FC = () => {
             </div>
         );
     }
+    
+    if (!apiKeySelected) {
+        return (
+            <div className="flex flex-col h-screen items-center justify-center bg-gray-50 text-gray-800 p-8 text-center">
+                <Lock size={48} className="text-gray-300 mb-4" />
+                <h2 className="text-2xl font-bold mb-2">Access Required</h2>
+                <p className="text-gray-500 mb-6 max-w-md">
+                    To use the advanced Gemini AI features (Image Generation, Video Analysis, etc.), 
+                    you must select a paid API key.
+                </p>
+                <button 
+                    onClick={handleSelectKey}
+                    className="bg-black text-white px-6 py-3 rounded-full font-medium hover:bg-gray-800 transition"
+                >
+                    Select API Key
+                </button>
+                <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="text-xs text-blue-500 mt-4 hover:underline">
+                    View Billing Documentation
+                </a>
+            </div>
+        );
+    }
 
     switch (viewMode) {
       case 'HOME':
@@ -85,14 +130,16 @@ const App: React.FC = () => {
             note={selectedNote} 
             onSave={handleSaveNote} 
             onBack={() => {
-                // Ensure latest version is saved/refreshed
                 handleSaveNote(selectedNote); 
                 setViewMode('HOME');
             }} 
+            onJumpToNote={handleSelectNote}
           />
         ) : null;
       case 'STATS':
         return <StatsView notes={notes} onBack={() => setViewMode('HOME')} />;
+      case 'GRAPH':
+        return <GraphView notes={notes} onBack={() => setViewMode('HOME')} onSelectNote={handleSelectNote} />;
       default:
         return null;
     }
@@ -113,6 +160,13 @@ const App: React.FC = () => {
                 title="Notes"
             >
                 <Layout size={20} />
+            </button>
+            <button 
+                onClick={() => setViewMode('GRAPH')}
+                className={`p-3 rounded-xl transition ${viewMode === 'GRAPH' ? 'bg-gray-100 text-black' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Knowledge Graph"
+            >
+                <Share2 size={20} />
             </button>
             <button 
                 onClick={() => setViewMode('STATS')}
@@ -136,6 +190,12 @@ const App: React.FC = () => {
             className={`p-2 rounded-lg ${viewMode === 'HOME' ? 'text-black bg-gray-100' : 'text-gray-400'}`}
         >
             <Layout size={24} />
+        </button>
+        <button 
+            onClick={() => setViewMode('GRAPH')}
+            className={`p-2 rounded-lg ${viewMode === 'GRAPH' ? 'text-black bg-gray-100' : 'text-gray-400'}`}
+        >
+            <Share2 size={24} />
         </button>
         <button 
              onClick={() => setViewMode('STATS')}
