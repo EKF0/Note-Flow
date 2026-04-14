@@ -9,17 +9,24 @@ interface NoteListProps {
   onDelete: (id: string) => void;
 }
 
+const FILTER_OPTIONS = {
+  ALL: 'All',
+  STATUS: 'Status',
+  CATEGORY: 'Category'
+} as const;
+
 const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete }) => {
-  const [filter, setFilter] = useState('All');
+  const [filter, setFilter] = useState(FILTER_OPTIONS.ALL);
   const [search, setSearch] = useState('');
 
   const filteredNotes = notes.filter(n => {
-    const matchesFilter = filter === 'All' ? true : n.status === filter || n.category === filter;
-    const matchesSearch = n.title.toLowerCase().includes(search.toLowerCase()) || n.content.toLowerCase().includes(search.toLowerCase());
+    const matchesFilter = filter === FILTER_OPTIONS.ALL || n.status === filter || n.category === filter;
+    const matchesSearch = n.title.toLowerCase().includes(search.toLowerCase()) || 
+                         n.content.toLowerCase().includes(search.toLowerCase());
     return matchesFilter && matchesSearch;
   });
 
-  const getStatusColor = (status: NoteStatus) => {
+  const getStatusColor = (status: NoteStatus): string => {
     switch (status) {
       case NoteStatus.COMPLETED: return 'bg-green-100 text-green-700';
       case NoteStatus.IN_PROGRESS: return 'bg-amber-100 text-amber-700';
@@ -27,7 +34,7 @@ const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete
     }
   };
 
-  const formatTimeSimple = (seconds: number) => {
+  const formatTimeSimple = (seconds: number): string => {
       const h = Math.floor(seconds / 3600);
       const m = Math.floor((seconds % 3600) / 60);
       return `${h}h ${m}m`;
@@ -42,6 +49,7 @@ const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete
             <button 
                 onClick={onCreate}
                 className="bg-black text-white p-3 rounded-full hover:bg-gray-800 shadow-lg transition transform hover:scale-105"
+                aria-label="Create new note"
             >
                 <Plus size={24} />
             </button>
@@ -66,8 +74,9 @@ const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete
                     className="pl-9 pr-8 py-2.5 bg-white border border-gray-200 rounded-xl text-sm appearance-none focus:outline-none cursor-pointer"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
+                    aria-label="Filter notes"
                 >
-                    <option value="All">All Views</option>
+                    <option value={FILTER_OPTIONS.ALL}>All Views</option>
                     <optgroup label="Status">
                         {Object.values(NoteStatus).map(s => <option key={s} value={s}>{s}</option>)}
                     </optgroup>
@@ -92,6 +101,9 @@ const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete
                     key={note.id} 
                     onClick={() => onSelect(note)}
                     className="group bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition cursor-pointer flex flex-col h-48"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && onSelect(note)}
                 >
                     <div className="flex justify-between items-start mb-2">
                         <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${getStatusColor(note.status)}`}>
@@ -116,6 +128,7 @@ const NoteList: React.FC<NoteListProps> = ({ notes, onSelect, onCreate, onDelete
                              <button 
                                 onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
                                 className="text-xs text-red-400 hover:text-red-600 px-2 py-1 hover:bg-red-50 rounded"
+                                aria-label={`Delete note: ${note.title}`}
                             >
                                 Delete
                              </button>
